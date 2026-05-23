@@ -2,7 +2,7 @@
   "id": "horses-3dvisibility",
   "title": "The Horse's 3D Visibility",
   "description": "Adds height-aware token visibility so sight can test the visible volume of a token above or around walls. Especially intended to improve play with theripper93's Wall Height module.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "manifest": "https://raw.githubusercontent.com/ryanw341/horses-3dvisibility/v1.0.0/module.json",
   "download": "https://github.com/ryanw341/horses-3dvisibility/archive/refs/tags/v1.0.0.zip",
   "compatibility": {
