@@ -3,6 +3,7 @@ const DEFAULT_TOKEN_HEIGHT = 6;
 const MAX_SAMPLE_INSET = 8;
 const SAMPLE_INSET_DIVISOR = 4;
 const FLOAT_EPSILON = 0.001;
+const PATCH_FLAG = Symbol.for(`${MODULE_ID}.patched`);
 
 function toFiniteNumber(value, fallback) {
   const numeric = Number(value);
@@ -95,7 +96,7 @@ function shouldTestAlternateVisibility(token) {
 
 function patchVisibilityTesting() {
   const prototype = globalThis.CanvasVisibility?.prototype;
-  if ( !prototype || prototype[MODULE_ID] ) return;
+  if ( !prototype || prototype[PATCH_FLAG] ) return;
 
   const originalTestVisibility = prototype.testVisibility;
   prototype.testVisibility = function(point, options = {}) {
@@ -113,7 +114,7 @@ function patchVisibilityTesting() {
     return false;
   };
 
-  Object.defineProperty(prototype, MODULE_ID, {
+  Object.defineProperty(prototype, PATCH_FLAG, {
     value: true,
     configurable: false,
     enumerable: false,
