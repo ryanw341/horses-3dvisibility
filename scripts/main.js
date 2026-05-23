@@ -88,15 +88,33 @@ function buildVisibilitySamplePoints(token, point) {
   return points;
 }
 
+function getCanvasVisibilityClass() {
+  return foundry?.canvas?.groups?.CanvasVisibility ?? globalThis.CanvasVisibility;
+}
+
+function getTokenClass() {
+  return foundry?.canvas?.placeables?.Token ?? globalThis.Token;
+}
+
 function shouldTestAlternateVisibility(token) {
-  if ( !(token instanceof globalThis.Token) ) return false;
+  const TokenClass = getTokenClass();
+  if ( !TokenClass || !(token instanceof TokenClass) ) return false;
   if ( !canvas?.ready ) return false;
   return canvas.scene?.tokenVision !== false;
 }
 
 function patchVisibilityTesting() {
-  const prototype = globalThis.CanvasVisibility?.prototype;
-  if ( !prototype || prototype[PATCH_FLAG] ) return;
+  const VisibilityClass = getCanvasVisibilityClass();
+  const prototype = VisibilityClass?.prototype;
+  if ( !prototype ) {
+    console.warn(`${MODULE_ID} | CanvasVisibility class was not found; height-aware visibility patch was not installed.`);
+    return;
+  }
+  if ( typeof prototype.testVisibility !== "function" ) {
+    console.warn(`${MODULE_ID} | CanvasVisibility#testVisibility is unavailable on this Foundry version; height-aware visibility patch was not installed.`);
+    return;
+  }
+  if ( prototype[PATCH_FLAG] ) return;
 
   const originalTestVisibility = prototype.testVisibility;
   prototype.testVisibility = function(point, options = {}) {
