@@ -1,6 +1,8 @@
 const MODULE_ID = "horses-3dvisibility";
 const DEFAULT_TOKEN_HEIGHT = 6;
 const MAX_SAMPLE_INSET = 8;
+const SAMPLE_INSET_DIVISOR = 4;
+const FLOAT_EPSILON = 0.001;
 
 function toFiniteNumber(value, fallback) {
   const numeric = Number(value);
@@ -20,8 +22,8 @@ function getTokenBottomElevation(token, fallbackPoint) {
 }
 
 function getTokenTopElevation(token, bottomElevation) {
-  const losHeight = toFiniteNumber(token?.losHeight, null);
-  if ( losHeight !== null ) return losHeight;
+  const tokenLosHeight = toFiniteNumber(token?.losHeight, null);
+  if ( tokenLosHeight !== null ) return tokenLosHeight;
 
   const configuredHeight = token?.document?.flags?.["wall-height"]?.tokenHeight;
   return bottomElevation + toFiniteNumber(configuredHeight, getDefaultTokenHeight());
@@ -44,7 +46,7 @@ function getTokenBounds(token, fallbackPoint) {
 }
 
 function getSampleInset(bounds) {
-  const quarterSize = Math.min(bounds.width, bounds.height) / 4;
+  const quarterSize = Math.min(bounds.width, bounds.height) / SAMPLE_INSET_DIVISOR;
   return Math.max(1, Math.min(MAX_SAMPLE_INSET, quarterSize));
 }
 
@@ -57,7 +59,7 @@ function getUniqueElevations(bottomElevation, topElevation, fallbackElevation) {
   ];
 
   return elevations.filter((elevation, index) => Number.isFinite(elevation)
-    && elevations.findIndex(existing => Math.abs(existing - elevation) < 0.001) === index);
+    && elevations.findIndex(existing => Math.abs(existing - elevation) < FLOAT_EPSILON) === index);
 }
 
 function buildVisibilitySamplePoints(token, point) {
@@ -74,9 +76,9 @@ function buildVisibilitySamplePoints(token, point) {
   for ( const elevation of elevations ) {
     for ( const x of xs ) {
       for ( const y of ys ) {
-        const isOriginalPoint = Math.abs(x - point.x) < 0.001
-          && Math.abs(y - point.y) < 0.001
-          && Math.abs(elevation - toFiniteNumber(point.elevation, bottomElevation)) < 0.001;
+        const isOriginalPoint = Math.abs(x - point.x) < FLOAT_EPSILON
+          && Math.abs(y - point.y) < FLOAT_EPSILON
+          && Math.abs(elevation - toFiniteNumber(point.elevation, bottomElevation)) < FLOAT_EPSILON;
         if ( !isOriginalPoint ) points.push({x, y, elevation});
       }
     }
