@@ -133,11 +133,29 @@ function patchVisibilityTesting() {
     const token = options.object;
     if ( !shouldTestAlternateVisibility(token) ) return false;
 
+    // Snapshot the detection filter as it was when the standard visibility call returned
+    // false. The original call above may have set a non-sight detection filter (e.g. the
+    // outline overlay from tremorsense) as a side effect even while ultimately returning
+    // false; in that case the snapshot already reflects "the filter Foundry wants when
+    // this token isn't being seen by sight". For our 3D fallback we model "the token is
+    // geometrically in sight once height is considered", so any non-sight detection
+    // filter set by a sample-point probe must be reverted before we return true,
+    // otherwise the token renders as a bare silhouette.
+    // `token` is guaranteed non-null here because shouldTestAlternateVisibility above
+    // requires it to be a Token instance.
+    const preFilter = token.detectionFilter ?? null;
+    const restoreFilter = () => {
+      if ( token.detectionFilter !== preFilter ) token.detectionFilter = preFilter;
+    };
     const samplePoints = buildVisibilitySamplePoints(token, point);
     for ( const samplePoint of samplePoints ) {
-      if ( originalTestVisibility.call(this, samplePoint, options) ) return true;
+      if ( originalTestVisibility.call(this, samplePoint, options) ) {
+        restoreFilter();
+        return true;
+      }
     }
 
+    restoreFilter();
     return false;
   };
 
@@ -259,6 +277,14 @@ function refreshTokenOverlay(token) {
 
   const container = ensureOverlayContainer();
   if ( !container ) return;
+
+  // When our 3D fallback is the reason this token is visible, any detection filter still
+  // attached is a stale side effect from a prior probe (e.g. an outline shader from a
+  // non-sight detection mode) and would render the reparented mesh as a bare silhouette.
+  // Clear it defensively. We only do this on the overlay path, so detection filters set
+  // legitimately by Foundry when a non-sight mode is the real reason the token is seen
+  // (in which case isVisibleOnlyVia3D returns false) are left untouched.
+  if ( token.detectionFilter ) token.detectionFilter = null;
 
   reparentTokenMesh(token, container);
 }
