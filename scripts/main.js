@@ -160,6 +160,9 @@ function isVisibleOnlyVia3D(token) {
 
   const center = token.center;
   if ( !center || !Number.isFinite(center.x) || !Number.isFinite(center.y) ) return false;
+  // `probe` carries the token's actual bottom elevation and is used as the seed point
+  // for buildVisibilitySamplePoints below, which expands it into a 3D grid of samples
+  // across the token's volume. It is intentionally NOT used for the gate test.
   const probe = {x: center.x, y: center.y, elevation: getTokenBottomElevation(token, center)};
   // Gate probe deliberately uses ground elevation (0) and omits the token object so that
   // height-aware modules (e.g. wall-height) fall back to a plain 2D visibility test. This
@@ -212,6 +215,9 @@ function restoreMesh(id) {
   if ( !mesh || mesh.destroyed ) return;
   if ( !originalParent || originalParent.destroyed ) return;
   if ( mesh.parent === originalParent ) return;
+  // PIXI's addChildAt accepts indices in [0, children.length]; passing children.length
+  // appends. If siblings have disappeared since we captured the original index we
+  // gracefully fall back to appending rather than throwing.
   const clampedIndex = Math.max(0, Math.min(originalIndex, originalParent.children.length));
   originalParent.addChildAt(mesh, clampedIndex);
 }
