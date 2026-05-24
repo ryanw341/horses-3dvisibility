@@ -9,7 +9,8 @@ const OVERLAY_CONTAINER_NAME = `${MODULE_ID}.overlay`;
 let originalTestVisibilityRef = null;
 const overlayState = {
   container: null,
-  sprites: new Map()
+  // tokenId -> {mesh, originalParent, originalIndex}
+  meshes: new Map()
 };
 
 function toFiniteNumber(value, fallback) {
@@ -159,10 +160,18 @@ function isVisibleOnlyVia3D(token) {
 
   const center = token.center;
   if ( !center || !Number.isFinite(center.x) || !Number.isFinite(center.y) ) return false;
+  // `probe` carries the token's actual bottom elevation and is used as the seed point
+  // for buildVisibilitySamplePoints below, which expands it into a 3D grid of samples
+  // across the token's volume. It is intentionally NOT used for the gate test.
   const probe = {x: center.x, y: center.y, elevation: getTokenBottomElevation(token, center)};
+  // Gate probe deliberately uses ground elevation (0) and omits the token object so that
+  // height-aware modules (e.g. wall-height) fall back to a plain 2D visibility test. This
+  // mirrors the question Foundry's vision/fog mask actually answers when deciding whether
+  // to darken the token's pixels, regardless of how high the token sits.
+  const groundProbe = {x: center.x, y: center.y, elevation: 0};
 
   try {
-    if ( originalTestVisibilityRef.call(visibility, probe, {object: token}) ) return false;
+    if ( originalTestVisibilityRef.call(visibility, groundProbe, {}) ) return false;
     for ( const samplePoint of buildVisibilitySamplePoints(token, probe) ) {
       if ( originalTestVisibilityRef.call(visibility, samplePoint, {object: token}) ) return true;
     }
@@ -181,12 +190,16 @@ function ensureOverlayContainer() {
   if ( !parent ) return null;
   let container = overlayState.container;
   if ( !container || container.destroyed || container.parent !== parent ) {
-    if ( container && !container.destroyed ) container.destroy({children: true});
-    overlayState.sprites.clear();
+    if ( container && !container.destroyed ) {
+      // Restore any meshes we'd reparented before destroying the stale container, so we
+      // never destroy the real token visuals along with our container.
+      restoreAllMeshes();
+      container.destroy({children: false});
+    }
     container = new PIXI.Container();
     container.name = OVERLAY_CONTAINER_NAME;
-    container.eventMode = "none";
-    container.interactiveChildren = false;
+    container.eventMode = "passive";
+    container.interactiveChildren = true;
     container.sortableChildren = false;
     parent.addChild(container);
     overlayState.container = container;
@@ -194,55 +207,60 @@ function ensureOverlayContainer() {
   return container;
 }
 
-function destroyOverlaySprite(id) {
-  const sprite = overlayState.sprites.get(id);
-  if ( sprite ) {
-    if ( !sprite.destroyed ) sprite.destroy();
-    overlayState.sprites.delete(id);
-  }
+function restoreMesh(id) {
+  const entry = overlayState.meshes.get(id);
+  if ( !entry ) return;
+  overlayState.meshes.delete(id);
+  const {mesh, originalParent, originalIndex} = entry;
+  if ( !mesh || mesh.destroyed ) return;
+  if ( !originalParent || originalParent.destroyed ) return;
+  if ( mesh.parent === originalParent ) return;
+  // PIXI's addChildAt accepts indices in [0, children.length]; passing children.length
+  // appends. If siblings have disappeared since we captured the original index we
+  // gracefully fall back to appending rather than throwing.
+  const clampedIndex = Math.max(0, Math.min(originalIndex, originalParent.children.length));
+  originalParent.addChildAt(mesh, clampedIndex);
 }
 
-function getTokenTexture(token) {
-  const candidate = token?.texture ?? token?.mesh?.texture;
-  if ( candidate && candidate !== PIXI.Texture.EMPTY ) return candidate;
-  return null;
+function restoreAllMeshes() {
+  for ( const id of [...overlayState.meshes.keys()] ) restoreMesh(id);
+}
+
+function reparentTokenMesh(token, container) {
+  const mesh = token?.mesh;
+  if ( !mesh || mesh.destroyed ) return;
+  if ( mesh.parent === container ) return;
+
+  const currentParent = mesh.parent;
+  const existing = overlayState.meshes.get(token.id);
+  // Preserve the first non-overlay parent we ever saw so we always restore to the layer
+  // Foundry expects, even if the mesh was briefly placed back in a transient container.
+  const originalParent = existing?.originalParent && !existing.originalParent.destroyed
+    ? existing.originalParent
+    : (currentParent && currentParent !== container ? currentParent : null);
+  const originalIndex = existing?.originalParent && !existing.originalParent.destroyed
+    ? existing.originalIndex
+    : (originalParent ? Math.max(0, originalParent.getChildIndex(mesh)) : 0);
+
+  if ( !originalParent ) return;
+
+  overlayState.meshes.set(token.id, {mesh, originalParent, originalIndex});
+  container.addChild(mesh);
 }
 
 function refreshTokenOverlay(token) {
   if ( !token?.id ) return;
-  const container = ensureOverlayContainer();
-  if ( !container ) return;
 
   const shouldShow = isVisibleOnlyVia3D(token);
   if ( !shouldShow ) {
-    destroyOverlaySprite(token.id);
+    restoreMesh(token.id);
     return;
   }
 
-  const texture = getTokenTexture(token);
-  if ( !texture ) {
-    destroyOverlaySprite(token.id);
-    return;
-  }
+  const container = ensureOverlayContainer();
+  if ( !container ) return;
 
-  let sprite = overlayState.sprites.get(token.id);
-  if ( !sprite || sprite.destroyed ) {
-    sprite = new PIXI.Sprite(texture);
-    sprite.anchor.set(0.5);
-    sprite.eventMode = "none";
-    container.addChild(sprite);
-    overlayState.sprites.set(token.id, sprite);
-  } else if ( sprite.texture !== texture ) {
-    sprite.texture = texture;
-  }
-
-  const bounds = getTokenBounds(token, token.center);
-  sprite.position.set(bounds.left + (bounds.width / 2), bounds.top + (bounds.height / 2));
-  sprite.width = bounds.width;
-  sprite.height = bounds.height;
-  sprite.rotation = toFiniteNumber(token.mesh?.rotation, toFiniteNumber(token.document?.rotation, 0) * Math.PI / 180);
-  sprite.tint = toFiniteNumber(token.mesh?.tint, 0xFFFFFF);
-  sprite.alpha = 1;
+  reparentTokenMesh(token, container);
 }
 
 function refreshAllTokenOverlays() {
@@ -256,17 +274,19 @@ function refreshAllTokenOverlays() {
     activeIds.add(token.id);
     refreshTokenOverlay(token);
   }
-  for ( const id of [...overlayState.sprites.keys()] ) {
-    if ( !activeIds.has(id) ) destroyOverlaySprite(id);
+  for ( const id of [...overlayState.meshes.keys()] ) {
+    if ( !activeIds.has(id) ) restoreMesh(id);
   }
 }
 
 function teardownOverlays() {
+  // Restore meshes before destroying the container so we don't tear down real token visuals.
+  restoreAllMeshes();
   if ( overlayState.container && !overlayState.container.destroyed ) {
-    overlayState.container.destroy({children: true});
+    overlayState.container.destroy({children: false});
   }
   overlayState.container = null;
-  overlayState.sprites.clear();
+  overlayState.meshes.clear();
 }
 
 Hooks.once("setup", patchVisibilityTesting);
@@ -278,5 +298,5 @@ Hooks.on("canvasTearDown", teardownOverlays);
 Hooks.on("sightRefresh", refreshAllTokenOverlays);
 Hooks.on("lightingRefresh", refreshAllTokenOverlays);
 Hooks.on("refreshToken", refreshTokenOverlay);
-Hooks.on("destroyToken", token => destroyOverlaySprite(token?.id));
-Hooks.on("deleteToken", document => destroyOverlaySprite(document?.id));
+Hooks.on("destroyToken", token => restoreMesh(token?.id));
+Hooks.on("deleteToken", document => restoreMesh(document?.id));
