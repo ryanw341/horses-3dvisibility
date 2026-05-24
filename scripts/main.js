@@ -160,9 +160,14 @@ function isVisibleOnlyVia3D(token) {
   const center = token.center;
   if ( !center || !Number.isFinite(center.x) || !Number.isFinite(center.y) ) return false;
   const probe = {x: center.x, y: center.y, elevation: getTokenBottomElevation(token, center)};
+  // Gate probe deliberately uses ground elevation (0) and omits the token object so that
+  // height-aware modules (e.g. wall-height) fall back to a plain 2D visibility test. This
+  // mirrors the question Foundry's vision/fog mask actually answers when deciding whether
+  // to darken the token's pixels, regardless of how high the token sits.
+  const groundProbe = {x: center.x, y: center.y, elevation: 0};
 
   try {
-    if ( originalTestVisibilityRef.call(visibility, probe, {object: token}) ) return false;
+    if ( originalTestVisibilityRef.call(visibility, groundProbe, {}) ) return false;
     for ( const samplePoint of buildVisibilitySamplePoints(token, probe) ) {
       if ( originalTestVisibilityRef.call(visibility, samplePoint, {object: token}) ) return true;
     }
