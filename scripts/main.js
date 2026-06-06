@@ -94,7 +94,7 @@ function getWallCoordinates(wall) {
 function getWallHeightBounds(wall) {
   const document = getWallDocument(wall);
   const flags = document?.flags?.[WALL_HEIGHT_MODULE_ID] ?? {};
-  // Unflagged walls remain full-height blockers, matching Foundry's standard wall behavior.
+  // Optional Wall Height flags narrow wall bounds; unflagged walls remain full-height blockers.
   return {
     bottom: toFiniteNumber(flags.bottom, -Infinity),
     top: toFiniteNumber(flags.top, Infinity)
@@ -163,19 +163,20 @@ function getVisionSourcePoint(source) {
   return {x, y, elevation};
 }
 
-function isPointWithinSourceRadius(source, sourcePoint, targetPoint) {
+function isPixelDistanceWithinSourceRadius(source, pixelDistance) {
+  if ( source?.radius === Infinity ) return true;
+  if ( source?.radius == null ) return false;
   const radius = Number(source?.radius);
-  // Missing radius is treated as unbounded for compatibility with Foundry source shapes that omit it.
-  if ( !Number.isFinite(radius) ) return source?.radius == null || source?.radius === Infinity;
+  if ( !Number.isFinite(radius) ) return false;
   if ( radius <= 0 ) return false;
-  const pixelDistance = Math.hypot(targetPoint.x - sourcePoint.x, targetPoint.y - sourcePoint.y);
   return pixelDistance <= (radius + FLOAT_EPSILON);
 }
 
 function isSampleClearFromSource(source, samplePoint) {
   const sourcePoint = getVisionSourcePoint(source);
   if ( !sourcePoint ) return false;
-  if ( !isPointWithinSourceRadius(source, sourcePoint, samplePoint) ) return false;
+  const pixelDistance = Math.hypot(samplePoint.x - sourcePoint.x, samplePoint.y - sourcePoint.y);
+  if ( !isPixelDistanceWithinSourceRadius(source, pixelDistance) ) return false;
 
   const walls = canvas?.walls?.placeables ?? [];
   const distancePerPixel = getGridDistancePerPixel();
@@ -191,7 +192,7 @@ function isSampleClearFromSource(source, samplePoint) {
     const {bottom, top} = getWallHeightBounds(wall);
     const sourceElevation = toFiniteNumber(sourcePoint.elevation, 0);
     const targetElevation = toFiniteNumber(samplePoint.elevation, sourceElevation);
-    const horizontalDistance = Math.hypot(samplePoint.x - sourcePoint.x, samplePoint.y - sourcePoint.y) * distancePerPixel;
+    const horizontalDistance = pixelDistance * distancePerPixel;
     if ( horizontalDistance <= FLOAT_EPSILON ) continue;
     const distanceToWall = horizontalDistance * fraction;
     // Interpolate the sight-line height at the wall intersection before comparing it to wall bounds.
