@@ -145,7 +145,9 @@ function getVisionSourcesForToken(token) {
   if ( !sources ) return [];
   const values = sources instanceof Map ? sources.values() : sources;
   // Older Foundry sources may not expose `active`; only skip sources explicitly marked inactive.
-  return [...values].filter(source => source && source.object !== token && source.active !== false);
+  return [...values].filter(source => source
+    && source.object !== token
+    && (source.active === undefined || source.active === null || source.active === true));
 }
 
 function getVisionSourcePoint(source) {
@@ -165,7 +167,7 @@ function getVisionSourcePoint(source) {
 
 function isPixelDistanceWithinSourceRadius(source, pixelDistance) {
   if ( source?.radius === Infinity ) return true;
-  if ( source?.radius == null ) return false;
+  if ( source?.radius === null || source?.radius === undefined ) return false;
   const radius = Number(source?.radius);
   if ( !Number.isFinite(radius) ) return false;
   if ( radius <= 0 ) return false;
