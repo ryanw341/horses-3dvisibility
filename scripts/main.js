@@ -122,9 +122,21 @@ function getSegmentIntersectionFraction(a, b, wallCoords) {
   const dy = wallCoords.y1 - a.y;
   const rayFraction = ((dx * wallY) - (dy * wallX)) / denominator;
   const wallFraction = ((dx * rayY) - (dy * rayX)) / denominator;
-  if ( rayFraction <= FLOAT_EPSILON || rayFraction >= (1 - FLOAT_EPSILON) ) return null;
+  if ( rayFraction < FLOAT_EPSILON || rayFraction > (1 - FLOAT_EPSILON) ) return null;
   if ( wallFraction < -FLOAT_EPSILON || wallFraction > (1 + FLOAT_EPSILON) ) return null;
   return rayFraction;
+}
+
+function doSegmentBoundsOverlap(a, b, wallCoords) {
+  const rayLeft = Math.min(a.x, b.x) - FLOAT_EPSILON;
+  const rayRight = Math.max(a.x, b.x) + FLOAT_EPSILON;
+  const rayTop = Math.min(a.y, b.y) - FLOAT_EPSILON;
+  const rayBottom = Math.max(a.y, b.y) + FLOAT_EPSILON;
+  const wallLeft = Math.min(wallCoords.x1, wallCoords.x2);
+  const wallRight = Math.max(wallCoords.x1, wallCoords.x2);
+  const wallTop = Math.min(wallCoords.y1, wallCoords.y2);
+  const wallBottom = Math.max(wallCoords.y1, wallCoords.y2);
+  return rayLeft <= wallRight && rayRight >= wallLeft && rayTop <= wallBottom && rayBottom >= wallTop;
 }
 
 function getVisionSourcesForToken(token) {
@@ -150,8 +162,9 @@ function getVisionSourcePoint(source) {
 }
 
 function isPointWithinSourceRadius(source, sourcePoint, targetPoint) {
-  const radius = toFiniteNumber(source?.radius, null);
-  if ( radius === null || radius <= 0 ) return true;
+  const radius = Number(source?.radius);
+  if ( !Number.isFinite(radius) ) return source?.radius == null || source?.radius === Infinity;
+  if ( radius <= 0 ) return false;
   const pixelDistance = Math.hypot(targetPoint.x - sourcePoint.x, targetPoint.y - sourcePoint.y);
   return pixelDistance <= (radius + FLOAT_EPSILON);
 }
@@ -167,6 +180,7 @@ function isSampleClearFromSource(source, samplePoint) {
     if ( !isWallSightBlocking(wall) ) continue;
     const wallCoords = getWallCoordinates(wall);
     if ( !wallCoords ) continue;
+    if ( !doSegmentBoundsOverlap(sourcePoint, samplePoint, wallCoords) ) continue;
 
     const fraction = getSegmentIntersectionFraction(sourcePoint, samplePoint, wallCoords);
     if ( fraction === null ) continue;
@@ -177,6 +191,7 @@ function isSampleClearFromSource(source, samplePoint) {
     const horizontalDistance = Math.hypot(samplePoint.x - sourcePoint.x, samplePoint.y - sourcePoint.y) * distancePerPixel;
     if ( horizontalDistance <= FLOAT_EPSILON ) continue;
     const distanceToWall = horizontalDistance * fraction;
+    // Interpolate the sight-line height at the wall intersection before comparing it to wall bounds.
     const lineElevation = sourceElevation + ((targetElevation - sourceElevation) * (distanceToWall / horizontalDistance));
 
     if ( lineElevation > (top + FLOAT_EPSILON) ) continue;
