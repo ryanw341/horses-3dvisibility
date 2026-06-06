@@ -94,6 +94,7 @@ function getWallCoordinates(wall) {
 function getWallHeightBounds(wall) {
   const document = getWallDocument(wall);
   const flags = document?.flags?.[WALL_HEIGHT_MODULE_ID] ?? {};
+  // Unflagged walls remain full-height blockers, matching Foundry's standard wall behavior.
   return {
     bottom: toFiniteNumber(flags.bottom, -Infinity),
     top: toFiniteNumber(flags.top, Infinity)
@@ -143,6 +144,7 @@ function getVisionSourcesForToken(token) {
   const sources = canvas?.effects?.visionSources;
   if ( !sources ) return [];
   const values = sources instanceof Map ? sources.values() : sources;
+  // Older Foundry sources may not expose `active`; only skip sources explicitly marked inactive.
   return [...values].filter(source => source && source.object !== token && source.active !== false);
 }
 
@@ -163,6 +165,7 @@ function getVisionSourcePoint(source) {
 
 function isPointWithinSourceRadius(source, sourcePoint, targetPoint) {
   const radius = Number(source?.radius);
+  // Missing radius is treated as unbounded for compatibility with Foundry source shapes that omit it.
   if ( !Number.isFinite(radius) ) return source?.radius == null || source?.radius === Infinity;
   if ( radius <= 0 ) return false;
   const pixelDistance = Math.hypot(targetPoint.x - sourcePoint.x, targetPoint.y - sourcePoint.y);
